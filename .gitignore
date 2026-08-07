@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 环境变量 / 密钥（本地测试时不要把 secrets 提交）
+.env
+*.env
+
+# IDE / 系统
+.vscode/
+.idea/
+.DS_Store
+
+# Claude Code
+.claude/settings.local.json

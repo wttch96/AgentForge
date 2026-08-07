@@ -1,0 +1,4 @@
+# OpenAI SDK（DeepSeek 使用 OpenAI 兼容接口）
+openai>=1.40.0
+# 本地 .env 配置加载
+python-dotenv>=1.0.0
