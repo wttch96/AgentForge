@@ -33,29 +33,42 @@ class EmailError(RuntimeError):
 class SMTPConfig:
     """SMTP 发送配置。
 
-    字段:
-        host:     SMTP 服务器地址（如 smtp.qq.com / smtp.exmail.qq.com）
-        port:     端口（465=SSL，587=STARTTLS）
-        user:     发件邮箱地址
-        password: 邮箱授权码（不是登录密码）
-        to:       收件人邮箱列表
+    Attributes
+    ----------
+    host : str
+        SMTP 服务器地址（如 smtp.qq.com / smtp.exmail.qq.com）。
+    port : int
+        端口（465=SSL，587=STARTTLS）。
+    user : str
+        发件邮箱地址。
+    password : str
+        邮箱授权码（不是登录密码）。
+    to : list of str
+        收件人邮箱列表。
     """
 
     host: str
     port: int
     user: str
     password: str
-    to: list[str] = field(default_factory=list)
+    to: list[str] = field(default_factory=lambda: [])
 
     @classmethod
     def from_env(cls) -> "SMTPConfig":
         """从环境变量读取 SMTP 配置。
 
-        必需环境变量：SMTP_HOST、SMTP_PORT、SMTP_USER、SMTP_PASSWORD、SMTP_TO
+        必需环境变量：SMTP_HOST、SMTP_PORT、SMTP_USER、SMTP_PASSWORD、SMTP_TO。
         SMTP_TO 支持逗号分隔多个收件人。
 
-        异常:
-            EmailError: 缺少任一必需环境变量
+        Returns
+        -------
+        SMTPConfig
+            从环境变量构建的 SMTP 配置。
+
+        Raises
+        ------
+        EmailError
+            缺少任一必需环境变量。
         """
         host = os.environ.get("SMTP_HOST", "")
         port = int(os.environ.get("SMTP_PORT", "0") or 0)
@@ -64,13 +77,16 @@ class SMTPConfig:
         to_raw = os.environ.get("SMTP_TO", "")
 
         # 收集所有缺失项，一次性报错（便于用户一次性补齐）
-        missing = [k for k, v in {
-            "SMTP_HOST": host,
-            "SMTP_PORT": port,
-            "SMTP_USER": user,
-            "SMTP_PASSWORD": password,
-            "SMTP_TO": to_raw,
-        }.items() if not v]
+        # port 是 int，统一转为 str 参与 falsy 判定（0 也视为缺失）
+        missing = [
+            k for k, v in [
+                ("SMTP_HOST", host),
+                ("SMTP_PORT", str(port)),
+                ("SMTP_USER", user),
+                ("SMTP_PASSWORD", password),
+                ("SMTP_TO", to_raw),
+            ] if not v
+        ]
         if missing:
             raise EmailError(f"缺少环境变量: {', '.join(missing)}")
 
@@ -82,20 +98,28 @@ class SMTPConfig:
 def build_message(cfg: SMTPConfig, subject: str, html_body: str, text_body: str) -> MIMEMultipart:
     """构建 HTML + 纯文本双正文的 MIME 邮件消息（不含发送逻辑，便于测试）。
 
-    参数:
-        cfg:       SMTP 配置（From/To 取 cfg.user / cfg.to）
-        subject:   邮件主题（中文自动 UTF-8 编码）
-        html_body: HTML 格式正文
-        text_body: 纯文本格式正文
+    Parameters
+    ----------
+    cfg : SMTPConfig
+        SMTP 配置（From/To 取 cfg.user / cfg.to）。
+    subject : str
+        邮件主题（中文自动 UTF-8 编码）。
+    html_body : str
+        HTML 格式正文。
+    text_body : str
+        纯文本格式正文。
 
-    返回:
-        MIMEMultipart 对象，可单独测试编码正确性
+    Returns
+    -------
+    MIMEMultipart
+        可单独测试编码正确性的 MIME 对象。
     """
     msg = MIMEMultipart("alternative")
-    msg["From"] = formataddr((str(Header(cfg.user, "utf-8")), cfg.user))
+    from_addr: str = formataddr((str(Header(cfg.user, "utf-8")), cfg.user))
+    msg["From"] = from_addr
     msg["To"] = ", ".join(cfg.to)
-    msg["Subject"] = Header(subject, "utf-8")
-    msg["Date"] = formatdate(localtime=True)
+    msg["Subject"] = str(Header(subject, "utf-8"))
+    msg["Date"] = str(formatdate(localtime=True))
 
     # 顺序重要：纯文本在前，HTML 在后（兼容客户端取最后一部分）
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
@@ -112,16 +136,26 @@ def send_email(
 ) -> None:
     """发送 HTML + 纯文本双正文邮件。
 
-    参数:
-        cfg:       SMTP 配置
-        subject:   邮件主题
-        html_body: HTML 正文
-        text_body: 纯文本正文
-        to:        覆盖收件人（默认用 cfg.to）
+    Parameters
+    ----------
+    cfg : SMTPConfig
+        SMTP 配置。
+    subject : str
+        邮件主题。
+    html_body : str
+        HTML 正文。
+    text_body : str
+        纯文本正文。
+    to : list of str or None
+        覆盖收件人（默认用 cfg.to）。
 
-    异常:
-        EmailError: 无收件人、SMTP 连接/登录/发送失败
+    Raises
+    ------
+    EmailError
+        无收件人、SMTP 连接/登录/发送失败。
 
+    Notes
+    -----
     端口策略：465 走 SSL（SMTP_SSL），其余端口（如 587）用 STARTTLS 升级连接。
     """
     recipients = to or cfg.to
@@ -147,6 +181,18 @@ def send_email(
 
 
 def _auth_and_send(server: smtplib.SMTP, cfg: SMTPConfig, recipients: list[str], msg: MIMEMultipart) -> None:
-    """登录 SMTP 服务器并发送邮件（连接已建立，按端口策略加密）。"""
+    """登录 SMTP 服务器并发送邮件（连接已建立，按端口策略加密）。
+
+    Parameters
+    ----------
+    server : smtplib.SMTP
+        已建立（并已加密）的 SMTP 连接。
+    cfg : SMTPConfig
+        SMTP 配置（用于 user / password 登录）。
+    recipients : list of str
+        收件人列表。
+    msg : MIMEMultipart
+        已构造好的 MIME 邮件消息。
+    """
     server.login(cfg.user, cfg.password)
     server.sendmail(cfg.user, recipients, msg.as_string())

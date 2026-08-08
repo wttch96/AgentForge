@@ -15,7 +15,7 @@ import os
 from openai import OpenAI
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"   # DeepSeek OpenAI 兼容接口地址
-DEEPSEEK_MODEL = "deepseek-chat"                  # 默认模型：deepseek-chat（V3）
+DEEPSEEK_MODEL = "deepseek-v4-flash"                  # 默认模型：deepseek-chat（V3）
 DEEPSEEK_TIMEOUT = 120                            # 请求超时（秒），生成日报文本较慢需放宽
 
 
@@ -37,13 +37,19 @@ class DeepSeekClient:
     ) -> None:
         """初始化客户端。
 
-        参数:
-            api_key:   DeepSeek API 密钥；为 None 时从环境变量 DEEPSEEK_API_KEY 读取
-            model:     模型名，默认 deepseek-chat
-            base_url:  API 基础地址，默认官方地址
+        Parameters
+        ----------
+        api_key : str or None
+            DeepSeek API 密钥；为 None 时从环境变量 DEEPSEEK_API_KEY 读取。
+        model : str
+            模型名，默认 deepseek-chat。
+        base_url : str
+            API 基础地址，默认官方地址。
 
-        异常:
-            DeepSeekError: 未提供 api_key 且环境变量为空
+        Raises
+        ------
+        DeepSeekError
+            未提供 api_key 且环境变量为空。
         """
         self.api_key = api_key or os.environ.get("DEEPSEEK_API_KEY", "")
         if not self.api_key:
@@ -56,16 +62,24 @@ class DeepSeekClient:
     def chat(self, system: str, user: str, temperature: float = 0.7) -> str:
         """单轮对话，返回助手回复文本。
 
-        参数:
-            system:       系统提示词（角色设定 / 输出约束）
-            user:         用户提示词（任务内容，通常含搜索到的数据）
-            temperature:  采样温度，越低越保守（去重比对用 0.1）
+        Parameters
+        ----------
+        system : str
+            系统提示词（角色设定 / 输出约束）。
+        user : str
+            用户提示词（任务内容，通常含搜索到的数据）。
+        temperature : float
+            采样温度，越低越保守（去重比对用 0.1）。
 
-        返回:
-            助手回复的纯文本内容
+        Returns
+        -------
+        str
+            助手回复的纯文本内容。
 
-        异常:
-            DeepSeekError: API 调用失败或返回空内容
+        Raises
+        ------
+        DeepSeekError
+            API 调用失败或返回空内容。
         """
         try:
             resp = self.client.chat.completions.create(

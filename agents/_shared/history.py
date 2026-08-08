@@ -36,10 +36,20 @@ _REPO_PATTERN = re.compile(
 
 
 def find_repo_refs(text: str) -> set[str]:
-    """从文本中提取仓库引用，返回 {owner/repo, github.com/owner/repo, ...}。
+    """从文本中提取仓库引用，返回 ``{owner/repo, github.com/owner/repo, ...}``。
 
-    历史记录中仓库可能以 `owner/repo` 或 `https://github.com/owner/repo` 出现，
+    历史记录中仓库可能以 ``owner/repo`` 或 ``https://github.com/owner/repo`` 出现，
     因此两种形式都会加入集合，供过滤时精确匹配。
+
+    Parameters
+    ----------
+    text : str
+        待提取的文本内容（通常为 resp-list 历史记录）。
+
+    Returns
+    -------
+    set of str
+        提取到的仓库引用集合（小写形式）。
     """
     found: set[str] = set()
     for m in _REPO_PATTERN.finditer(text):
@@ -51,14 +61,24 @@ def find_repo_refs(text: str) -> set[str]:
 
 
 def agent_dir(agent: str, create: bool = False) -> Path:
-    """返回 agent 的数据根目录（data/<agent>/）。
+    """返回 agent 的数据根目录（``data/<agent>/``）。
 
-    参数:
-        agent:  agent 名（目录名，须匹配 [A-Za-z0-9._-]+）
-        create: 目录不存在时是否创建
+    Parameters
+    ----------
+    agent : str
+        Agent 名（目录名，须匹配 ``[A-Za-z0-9._-]+``）。
+    create : bool
+        目录不存在时是否创建。
 
-    异常:
-        HistoryError: agent 名非法
+    Returns
+    -------
+    Path
+        Agent 的数据根目录路径。
+
+    Raises
+    ------
+    HistoryError
+        Agent 名非法。
     """
     if not re.fullmatch(r"[A-Za-z0-9._-]+", agent):
         raise HistoryError(f"非法的 agent 名称: {agent!r}")
@@ -69,15 +89,26 @@ def agent_dir(agent: str, create: bool = False) -> Path:
 
 
 def month_dir(agent: str, ym: str, create: bool = False) -> Path:
-    """返回某月份目录（data/<agent>/YYYY-MM/）。
+    """返回某月份目录（``data/<agent>/YYYY-MM/``）。
 
-    参数:
-        agent:  agent 名
-        ym:     年月，格式 YYYY-MM
-        create: 目录不存在时是否创建
+    Parameters
+    ----------
+    agent : str
+        Agent 名。
+    ym : str
+        年月，格式 YYYY-MM。
+    create : bool
+        目录不存在时是否创建。
 
-    异常:
-        HistoryError: 年月格式非法
+    Returns
+    -------
+    Path
+        月份目录路径。
+
+    Raises
+    ------
+    HistoryError
+        年月格式非法。
     """
     if not re.fullmatch(r"\d{4}-\d{2}", ym):
         raise HistoryError(f"非法的年月: {ym!r}")
@@ -88,13 +119,28 @@ def month_dir(agent: str, ym: str, create: bool = False) -> Path:
 
 
 def data_path(agent: str, kind: str, date_str: str, create: bool = True) -> Path:
-    """返回某条数据的写入路径：data/<agent>/YYYY-MM/DD-<kind>.md。
+    """返回某条数据的写入路径：``data/<agent>/YYYY-MM/DD-<kind>.md``。
 
-    参数:
-        agent:     agent 名（目录名）
-        kind:      'mail' 或 'resp-list'
-        date_str:  YYYY-MM-DD
     同日同 kind 已存在时追加序号（-2、-3 ...），避免覆盖。
+
+    Parameters
+    ----------
+    agent : str
+        Agent 名（目录名）。
+    kind : str
+        数据种类（'mail' 或 'resp-list'）。
+    date_str : str
+        日期，格式 YYYY-MM-DD。
+
+    Returns
+    -------
+    Path
+        数据文件写入路径。
+
+    Raises
+    ------
+    HistoryError
+        kind 非法。
     """
     if kind not in ("mail", "resp-list"):
         raise HistoryError(f"非法的 kind: {kind!r}")
@@ -110,7 +156,24 @@ def data_path(agent: str, kind: str, date_str: str, create: bool = True) -> Path
 
 
 def save_data(agent: str, kind: str, date_str: str, content: str) -> Path:
-    """把内容写入 data/<agent>/YYYY-MM/DD-<kind>.md，返回文件路径。"""
+    """把内容写入 ``data/<agent>/YYYY-MM/DD-<kind>.md``，返回文件路径。
+
+    Parameters
+    ----------
+    agent : str
+        Agent 名。
+    kind : str
+        数据种类（'mail' 或 'resp-list'）。
+    date_str : str
+        日期，格式 YYYY-MM-DD。
+    content : str
+        待写入的文本内容。
+
+    Returns
+    -------
+    Path
+        写入后的文件路径。
+    """
     path = data_path(agent, kind, date_str)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -118,9 +181,23 @@ def save_data(agent: str, kind: str, date_str: str, content: str) -> Path:
 
 
 def list_data(agent: str, kind: str, newest_first: bool = True) -> list[Path]:
-    """列出 agent 数据目录下所有 <dd>-<kind>.md 文件（跨月份，默认最新在前）。
+    """列出 agent 数据目录下所有 ``<dd>-<kind>.md`` 文件（跨月份，默认最新在前）。
 
-    匹配形如 `07-mail.md`、`07-mail-2.md` 的文件名（同日同 kind 追加序号的情况）。
+    匹配形如 ``07-mail.md``、``07-mail-2.md`` 的文件名（同日同 kind 追加序号的情况）。
+
+    Parameters
+    ----------
+    agent : str
+        Agent 名。
+    kind : str
+        数据种类（'mail' 或 'resp-list'）。
+    newest_first : bool
+        是否最新在前。
+
+    Returns
+    -------
+    list of Path
+        按时间排序的文件路径列表。
     """
     d = agent_dir(agent)
     if not d.exists():
@@ -143,12 +220,21 @@ def list_data(agent: str, kind: str, newest_first: bool = True) -> list[Path]:
 
 
 def load_data(agent: str, kind: str, limit: int | None = None) -> list[tuple[str, str]]:
-    """加载历史数据文件，返回 [(文件名, 内容), ...]（默认最新在前）。
+    """加载历史数据文件，返回 ``[(文件名, 内容), ...]``（默认最新在前）。
 
-    参数:
-        agent: agent 名
-        kind:  数据种类（'mail' / 'resp-list'）
-        limit: 只加载最近 N 条（None 表示全部）
+    Parameters
+    ----------
+    agent : str
+        Agent 名。
+    kind : str
+        数据种类（'mail' 或 'resp-list'）。
+    limit : int or None
+        只加载最近 N 条（None 表示全部）。
+
+    Returns
+    -------
+    list of tuple of (str, str)
+        (文件名, 文件内容) 的列表。
     """
     files = list_data(agent, kind, newest_first=True)
     if limit is not None:
@@ -159,13 +245,19 @@ def load_data(agent: str, kind: str, limit: int | None = None) -> list[tuple[str
 def load_recent(agent: str, kind: str, limit: int = 5) -> str:
     """把最近 limit 条某类数据拼接为一段文本，供 DeepSeek 比对去重。
 
-    参数:
-        agent: agent 名
-        kind:  数据种类（'mail' → 历史邮件，'resp-list' → 历史仓库列表）
-        limit: 拼接最近多少条
+    Parameters
+    ----------
+    agent : str
+        Agent 名。
+    kind : str
+        数据种类（'mail' → 历史邮件，'resp-list' → 历史仓库列表）。
+    limit : int
+        拼接最近多少条。
 
-    返回:
-        拼接后的文本；没有历史数据时返回空字符串
+    Returns
+    -------
+    str
+        拼接后的文本；没有历史数据时返回空字符串。
     """
     records = load_data(agent, kind, limit=limit)
     if not records:

@@ -87,14 +87,20 @@ MODEL = "deepseek-chat"
 def load_prompt(name: str) -> str:
     """从 prompts/ 目录加载提示词文件（不硬编码，全部文件化）。
 
-    参数:
-        name: 提示词文件名，如 "system.md"、"user.md"、"dedupe.md"
+    Parameters
+    ----------
+    name : str
+        提示词文件名，如 "system.md"、"user.md"、"dedupe.md"。
 
-    返回:
-        文件内容字符串
+    Returns
+    -------
+    str
+        文件内容字符串。
 
-    异常:
-        FileNotFoundError: 提示词文件不存在
+    Raises
+    ------
+    FileNotFoundError
+        提示词文件不存在。
     """
     path = PROMPTS_DIR / name
     if not path.exists():
@@ -105,11 +111,15 @@ def load_prompt(name: str) -> str:
 def build_daily_report(repos: list[dict]) -> str:
     """调用 DeepSeek，用提示词文件生成中文日报（HTML）。
 
-    参数:
-        repos: 去重后的仓库列表（含 full_name/html_url/description/star 等字段）
+    Parameters
+    ----------
+    repos : list of dict
+        去重后的仓库列表（含 full_name/html_url/description/star 等字段）。
 
-    返回:
-        DeepSeek 生成的中文 HTML 日报
+    Returns
+    -------
+    str
+        DeepSeek 生成的中文 HTML 日报。
     """
     system = load_prompt("system.md")
     user_template = load_prompt("user.md")
@@ -124,8 +134,18 @@ def build_daily_report(repos: list[dict]) -> str:
 def filter_known_repos(repos: list[dict]) -> list[dict]:
     """确定性去重：剔除历史 resp-list 中已关注过的仓库（按 full_name / html_url）。
 
-    读取 data/<TAG>/ 下最近 DEDUPE_HISTORY_LIMIT 份 resp-list，
+    读取 ``data/<TAG>/`` 下最近 DEDUPE_HISTORY_LIMIT 份 resp-list，
     提取其中出现过的仓库引用，从候选列表中剔除匹配项。
+
+    Parameters
+    ----------
+    repos : list of dict
+        待去重的仓库列表。
+
+    Returns
+    -------
+    list of dict
+        过滤后的仓库列表。
     """
     seen = set()
     for name, content in history.load_data(TAG, "resp-list", limit=DEDUPE_HISTORY_LIMIT):
@@ -153,11 +173,15 @@ def dedupe_with_llm(report: str) -> dict:
         dedupe-system.md  系统提示词（角色 + 输出 JSON 格式约束）
         dedupe.md         用户提示词模板（比对规则）
 
-    参数:
-        report: 今日生成的日报 HTML
+    Parameters
+    ----------
+    report : str
+        今日生成的日报 HTML。
 
-    返回:
-        字典，含 has_duplicate / duplicated_repos / analysis
+    Returns
+    -------
+    dict
+        含 has_duplicate / duplicated_repos / analysis 的字典。
     """
     history_text = history.load_recent(TAG, kind="mail", limit=DEDUPE_HISTORY_LIMIT)
     if not history_text:
@@ -181,11 +205,18 @@ def dedupe_with_llm(report: str) -> dict:
 def parse_dedupe_result(raw: str) -> dict:
     """从 DeepSeek 输出中提取 JSON 结果（容错解析）。
 
-    DeepSeek 可能返回带 ```json 代码块或前后有多余文字的内容，
-    这里去代码块围栏后截取第一个 `{...}` 块再解析。
+    DeepSeek 可能返回带 `` ```json `` 代码块或前后有多余文字的内容，
+    这里去代码块围栏后截取第一个 ``{...}`` 块再解析。
 
-    返回:
-        dict；解析失败时返回带 has_duplicate=False 的默认结构（不阻断流程）
+    Parameters
+    ----------
+    raw : str
+        DeepSeek 原始返回文本。
+
+    Returns
+    -------
+    dict
+        解析成功返回去重结果字典；解析失败返回带 has_duplicate=False 的默认结构（不阻断流程）。
     """
     import re
 
@@ -204,14 +235,23 @@ def parse_dedupe_result(raw: str) -> dict:
 def save_history_record(html: str, text: str, repos: list[dict]) -> str:
     """把本次日报与仓库列表写入 data/daily-digest/YYYY-MM/，返回日期串。
 
-    写入两个 Markdown 文件（由 history.save_data 补 .md 扩展名）：
+    写入两个 Markdown 文件（由 ``history.save_data`` 补 .md 扩展名）：
         DD-mail.md        原始邮件内容（HTML + 纯文本）
         DD-resp-list.md   当日关注的 GitHub 仓库（地址/star/简介）
 
-    参数:
-        html:  日报 HTML 正文
-        text:  日报纯文本正文
-        repos: 本次报道的仓库列表
+    Parameters
+    ----------
+    html : str
+        日报 HTML 正文。
+    text : str
+        日报纯文本正文。
+    repos : list of dict
+        本次报道的仓库列表。
+
+    Returns
+    -------
+    str
+        日期字符串（YYYY-MM-DD）。
     """
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -359,8 +399,18 @@ def _html_to_text(html: str) -> str:
     """极简 HTML→纯文本：去掉标签，用于邮件纯文本正文。
 
     处理规则：
-        去掉 <style> 块、把 <br> 转换行、块级标签（</p></div></li></h>）换行、
+        去掉 ``<style>`` 块、把 ``<br>`` 转换行、块级标签换行、
         剥离其余标签、反转义 HTML 实体、压缩连续空行。
+
+    Parameters
+    ----------
+    html : str
+        HTML 格式文本。
+
+    Returns
+    -------
+    str
+        去掉标签后的纯文本。
     """
     import html as html_lib
     import re

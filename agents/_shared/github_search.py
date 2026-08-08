@@ -24,7 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import cast
 
 GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
 
@@ -33,19 +33,28 @@ class GitHubSearchError(RuntimeError):
     """GitHub 搜索失败。"""
 
 
-def _gh_request(url: str, token: str) -> dict[str, Any]:
+def _gh_request(url: str, token: str) -> dict[str, object]:
     """发送带认证的 GitHub API 请求，处理 rate limit 与限流重试。
 
-    参数:
-        url:   完整 API 地址（含 query string）
-        token: GitHub Token，非空时带 Bearer 认证（提升 rate limit 到 30 次/分）
+    Parameters
+    ----------
+    url : str
+        完整 API 地址（含 query string）。
+    token : str
+        GitHub Token，非空时带 Bearer 认证（提升 rate limit 到 30 次/分）。
 
-    返回:
-        JSON 解析后的字典
+    Returns
+    -------
+    dict
+        JSON 解析后的字典。
 
-    异常:
-        GitHubSearchError: 请求失败（HTTP 错误或多次重试后仍网络失败）
+    Raises
+    ------
+    GitHubSearchError
+        请求失败（HTTP 错误或多次重试后仍网络失败）。
 
+    Notes
+    -----
     重试策略：
         - 403 且 rate limit 耗尽：按 Retry-After 头等待后重试（最多 120 秒）
         - 502/503/504 网关错误：指数退避重试
@@ -62,8 +71,9 @@ def _gh_request(url: str, token: str) -> dict[str, Any]:
     req = urllib.request.Request(url, headers=headers)
     for attempt in range(4):
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return _json(resp)
+            with urllib.request.urlopen(req, timeout=30) as resp:  # type: ignore[attr-defined]
+                data: object = json.loads(resp.read().decode("utf-8"))
+                return cast("dict[str, object]", data)
         except urllib.error.HTTPError as exc:
             if exc.code == 403 and exc.headers.get("X-RateLimit-Remaining") == "0":
                 # rate limit 耗尽：优先按服务器提示的 Retry-After 等待
@@ -84,22 +94,50 @@ def _gh_request(url: str, token: str) -> dict[str, Any]:
     raise GitHubSearchError(f"GitHub API 请求多次重试后仍失败: {url}")
 
 
-def _json(resp: Any) -> dict[str, Any]:
-    """把 HTTP 响应体解析为 JSON 字典。"""
-    return json.loads(resp.read().decode("utf-8"))
+def _search_repo(query: str, token: str, sort: str, order: str, per_page: int) -> list[dict[str, object]]:
+    """执行单次仓库搜索请求，返回 items 列表。
 
+    Parameters
+    ----------
+    query : str
+        搜索关键词。
+    token : str
+        GitHub Token。
+    sort : str
+        排序字段（如 "stars"）。
+    order : str
+        排序方向（"asc" 或 "desc"）。
+    per_page : int
+        每页返回数量。
 
-def _search_repo(query: str, token: str, sort: str, order: str, per_page: int) -> list[dict[str, Any]]:
-    """执行单次仓库搜索请求，返回 items 列表。"""
+    Returns
+    -------
+    list of dict
+        仓库对象列表（GitHub API items 字段）。
+    """
     params = urllib.parse.urlencode(
         {"q": query, "sort": sort, "order": order, "per_page": per_page}
     )
     data = _gh_request(f"{GITHUB_SEARCH_URL}?{params}", token)
-    return data.get("items", [])
+    return cast("list[dict[str, object]]", data.get("items", []))
 
 
-def _pick_fields(item: dict[str, Any]) -> dict[str, Any]:
-    """从 GitHub 仓库对象中挑选日报需要的字段。"""
+def _pick_fields(item: dict[str, object]) -> dict[str, object]:
+    """从 GitHub 仓库对象中挑选日报需要的字段。
+
+    Parameters
+    ----------
+    item : dict
+        GitHub API 返回的单个仓库对象。
+
+    Returns
+    -------
+    dict
+        精简后的仓库信息字典，仅含日报所需字段。
+    """
+    # license 是嵌套对象，取 spdx_id；其余字段均为标量
+    license_obj = cast("dict[str, object] | None", item.get("license"))
+    topics_val = item.get("topics", [])
     return {
         "full_name": item.get("full_name", ""),
         "html_url": item.get("html_url", ""),
@@ -110,13 +148,24 @@ def _pick_fields(item: dict[str, Any]) -> dict[str, Any]:
         "language": item.get("language"),
         "pushed_at": item.get("pushed_at", ""),
         "created_at": item.get("created_at", ""),
-        "topics": item.get("topics", []) or [],
-        "license": (item.get("license") or {}).get("spdx_id"),
+        "topics": cast("list[str]", topics_val) if topics_val is not None else [],
+        "license": (license_obj or {}).get("spdx_id"),
     }
 
 
 def _days_ago(days: int) -> str:
-    """返回 N 天前的 ISO 日期字符串（UTC），用于 pushed:>= 过滤。"""
+    """返回 N 天前的 ISO 日期字符串（UTC），用于 pushed:>= 过滤。
+
+    Parameters
+    ----------
+    days : int
+        往回推的天数。
+
+    Returns
+    -------
+    str
+        ISO 格式日期字符串，如 "2026-08-01"。
+    """
     return (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
 
 
@@ -126,20 +175,31 @@ def search_repos(
     per_query: int = 20,
     top_n: int = 10,
     token: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, object]]:
     """对每个关键词执行仓库搜索，合并去重后返回 star 数最高的 top_n 个仓库。
 
-    参数:
-        queries:    GitHub 搜索关键词列表
-        days:       只看最近 N 天有更新的仓库（pushed:>=）
-        per_query:  每个关键词取前多少条
-        top_n:      合并后最终返回的仓库数
-        token:      GitHub Token（默认读 GITHUB_TOKEN 环境变量）
+    Parameters
+    ----------
+    queries : list of str
+        GitHub 搜索关键词列表。
+    days : int
+        只看最近 N 天有更新的仓库（pushed:>=）。
+    per_query : int
+        每个关键词取前多少条。
+    top_n : int
+        合并后最终返回的仓库数。
+    token : str or None
+        GitHub Token（默认读 GITHUB_TOKEN 环境变量）。
+
+    Returns
+    -------
+    list of dict
+        按 star 降序排列的仓库列表，取前 top_n 个。
     """
     token = token or os.environ.get("GITHUB_TOKEN", "")
     since = _days_ago(days)
 
-    merged: dict[str, dict[str, Any]] = {}
+    merged: dict[str, dict[str, object]] = {}
     for query in queries:
         q = f"{query} pushed:>={since}"
         try:
@@ -150,11 +210,15 @@ def search_repos(
             continue
 
         for item in items:
-            full_name = item.get("full_name")
+            full_name = cast("str | None", item.get("full_name"))
             if not full_name:
                 continue
             # 同名仓库只保留一次，star 多的优先（后续按 star 排序时自然覆盖）
             merged.setdefault(full_name, _pick_fields(item))
 
-    ranked = sorted(merged.values(), key=lambda r: r["stargazers_count"], reverse=True)
+    ranked = sorted(
+        merged.values(),
+        key=lambda r: cast(int, r.get("stargazers_count", 0)),
+        reverse=True,
+    )
     return ranked[:top_n]

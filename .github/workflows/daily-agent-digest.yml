@@ -2,8 +2,8 @@ name: Daily Agent Digest
 
 on:
   schedule:
-    # 每天 00:30 UTC = 北京时间 08:30
-    - cron: '30 0 * * *'
+    # 工作日 00:30 UTC = 北京时间 08:30（周一至周五）
+    - cron: '30 0 * * 1-5'
   workflow_dispatch: # 允许手动触发，便于首次部署验证
 
 # contents: write 用于把 data/ 数据与代码变更自动提交回仓库
