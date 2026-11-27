@@ -2,8 +2,8 @@
 """每日热门 Agent / Skill 仓库日报（AgentForge 第一个 agent）。
 
 完整流程：
-1. 通过 GitHub Search API 搜索最近 7 天活跃的 agent / skill 相关仓库（Top 10）
-2. 与历史数据（data/daily-digest/）确定性去重，剔除已关注过的仓库
+1. 通过 GitHub Search API 搜索最近 7 天活跃的 agent / skill 相关仓库
+2. 对照全部仓库归档剔除已关注的仓库，再取最多 10 个
 3. 用 DeepSeek 汇总生成中文 HTML 日报（提示词从 prompts/ 文件加载，不硬编码）
 4. 与历史邮件做 LLM 语义去重，避免重复推送
 5. 把日报与仓库列表写入 data/daily-digest/YYYY-MM/ 存档
@@ -132,35 +132,17 @@ def build_daily_report(repos: list[dict]) -> str:
 
 
 def filter_known_repos(repos: list[dict]) -> list[dict]:
-    """确定性去重：剔除历史 resp-list 中已关注过的仓库（按 full_name / html_url）。
-
-    读取 ``data/<TAG>/`` 下最近 DEDUPE_HISTORY_LIMIT 份 resp-list，
-    提取其中出现过的仓库引用，从候选列表中剔除匹配项。
-
-    Parameters
-    ----------
-    repos : list of dict
-        待去重的仓库列表。
-
-    Returns
-    -------
-    list of dict
-        过滤后的仓库列表。
-    """
+    """按不区分大小写的 owner/repo 检查全部已归档推荐。"""
     seen = set()
-    for name, content in history.load_data(TAG, "resp-list", limit=DEDUPE_HISTORY_LIMIT):
-        seen.update(history.find_repo_refs(content))
-    if not seen:
-        return repos
+    for _, content in history.load_data(TAG, "resp-list"):
+        seen.update(history.find_archived_repo_names(content))
     kept, dropped = [], []
-    for r in repos:
-        name = r.get("full_name", "")
-        url = r.get("html_url", "")
-        # 仓库名（owner/repo）或完整 URL 命中历史即视为已关注
-        if name in seen or url in seen:
+    for repo in repos:
+        name = repo.get("full_name") or ""
+        if name.lower() in seen:
             dropped.append(name)
         else:
-            kept.append(r)
+            kept.append(repo)
     if dropped:
         print(f"      [去重] 历史已关注，跳过: {', '.join(dropped)}")
     return kept
@@ -308,8 +290,8 @@ def main() -> None:
         --send-test-email  只发一封测试邮件验证 SMTP，不搜索不生成
 
     数据流:
-        1. GitHub 搜索 Top 仓库
-        2. 与历史 resp-list 确定性去重
+        1. GitHub 搜索候选仓库
+        2. 与全部历史 resp-list 确定性去重，再取前十
         3. DeepSeek 生成中文日报
         4. 与历史 mail 做 LLM 语义去重
         5. 写 data/<TAG>/YYYY-MM/ 存档
@@ -337,7 +319,7 @@ def main() -> None:
         queries=SEARCH_QUERIES,
         days=DAYS_BACK,
         per_query=PER_QUERY,
-        top_n=TOP_N,
+        top_n=None,
     )
     if not repos:
         print("[error] 没有搜索到任何仓库，请检查 GITHUB_TOKEN 与网络。")
@@ -345,7 +327,7 @@ def main() -> None:
     print(f"      共找到 {len(repos)} 个仓库")
 
     # 历史去重：剔除历史 resp-list 中已关注过的仓库（data/<TAG>/ 中的记录）
-    repos = filter_known_repos(repos)
+    repos = filter_known_repos(repos)[:TOP_N]
     if not repos:
         print("[info] 本次搜索结果与历史记录全部重复，跳过生成与发送。")
         return

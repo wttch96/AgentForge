@@ -60,6 +60,26 @@ def find_repo_refs(text: str) -> set[str]:
     return found
 
 
+def find_archived_repo_names(text: str) -> set[str]:
+    """只读取归档行的仓库名及链接，不匹配项目简介里的其他仓库。"""
+    names: set[str] = set()
+    repo = r"[a-z0-9_.-]+/[a-z0-9_.-]+"
+    for line in text.splitlines():
+        if not line.startswith("- "):
+            continue
+        name, sep, rest = line[2:].partition("|")
+        if not sep:
+            continue
+        name = name.strip().lower()
+        if re.fullmatch(repo, name):
+            names.add(name)
+        url = rest.partition("|")[0].strip().lower().rstrip("/")
+        match = re.fullmatch(r"https?://github\.com/(" + repo + r")", url)
+        if match:
+            names.add(match.group(1))
+    return names
+
+
 def agent_dir(agent: str, create: bool = False) -> Path:
     """返回 agent 的数据根目录（``data/<agent>/``）。
 
