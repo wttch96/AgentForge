@@ -173,7 +173,7 @@ def search_repos(
     queries: list[str],
     days: int = 7,
     per_query: int = 20,
-    top_n: int = 10,
+    top_n: int | None = 10,
     token: str | None = None,
 ) -> list[dict[str, object]]:
     """对每个关键词执行仓库搜索，合并去重后返回 star 数最高的 top_n 个仓库。
@@ -186,8 +186,8 @@ def search_repos(
         只看最近 N 天有更新的仓库（pushed:>=）。
     per_query : int
         每个关键词取前多少条。
-    top_n : int
-        合并后最终返回的仓库数。
+    top_n : int | None
+        合并后最终返回的仓库数；None 返回全部候选。
     token : str or None
         GitHub Token（默认读 GITHUB_TOKEN 环境变量）。
 
@@ -213,12 +213,16 @@ def search_repos(
             full_name = cast("str | None", item.get("full_name"))
             if not full_name:
                 continue
-            # 同名仓库只保留一次，star 多的优先（后续按 star 排序时自然覆盖）
-            merged.setdefault(full_name, _pick_fields(item))
+            # GitHub 仓库名不区分大小写，保留原始展示名。
+            key = full_name.lower()
+            previous = merged.get(key)
+            record = _pick_fields(item)
+            if previous is None or cast(int, record.get("stargazers_count", 0)) > cast(int, previous.get("stargazers_count", 0)):
+                merged[key] = record
 
     ranked = sorted(
         merged.values(),
         key=lambda r: cast(int, r.get("stargazers_count", 0)),
         reverse=True,
     )
-    return ranked[:top_n]
+    return ranked if top_n is None else ranked[:top_n]
